@@ -1,0 +1,12 @@
+In app > manifests > AndroidManifest.xml, find the line that starts with
+
+    <activity
+        android:name=".MainActivity"
+
+and add these two lines inside that <activity ...> tag (right under android:name):
+
+        android:screenOrientation="portrait"
+        android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+
+That keeps the game upright like the original app. Don't add any internet
+permission: the app works fully offline.

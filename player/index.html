@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Love Island: The Game — PC</title>
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <div id="bg"><div class="bgl"></div><div class="bgl"></div></div>
+    <div id="chars"></div>
+    <div id="mapWrap" class="hidden">
+      <div id="mapScroll"><div id="mapImg"></div></div>
+      <div class="map-title">Where do you want to go?</div>
+      <button id="mapDone" class="map-done hidden">I'm done here</button>
+      <button id="mapL" class="map-edge left hidden">◀ <span></span></button>
+      <button id="mapR" class="map-edge right hidden"><span></span> ▶</button>
+    </div>
+    <div id="overflow"></div>
+    <div id="fx"></div>
+    <div id="toast" class="hidden"></div>
+
+    <div id="textbox" class="hidden">
+      <div id="tail"></div>
+      <div id="nametag" class="hidden"></div>
+      <div id="text"></div>
+      <div id="more">▼</div>
+    </div>
+    <div id="choices" class="hidden"></div>
+
+    <div id="hud" class="hidden">
+      <button id="btnWardrobe" title="Wardrobe (W)"><svg viewBox="0 0 48 32" class="ico"><path d="M24 9a4 4 0 1 1 4-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M24 9v3L4 27h40L24 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg> Wardrobe</button>
+      <button id="btnLog" title="History (H)">☰ History</button>
+      <button id="btnMute" title="Music on/off (M)">♪</button>
+      <button id="btnMenu" title="Menu (Esc)">Menu</button>
+    </div>
+    <div id="epbadge" class="hidden"></div>
+
+    <!-- overlays -->
+    <div id="title" class="overlay">
+      <div class="title-card">
+        <div class="logo">Love Island<span>The Game</span></div>
+        <div id="seasonTabs" class="tabs"></div>
+        <div id="titleInfo" class="muted"></div>
+        <div class="menu">
+          <button id="btnContinue" class="primary">Continue</button>
+          <button id="btnNew">New game</button>
+          <button id="btnEpisodes">Episodes</button>
+          <button id="btnSettings">Settings</button>
+        </div>
+        <div id="loading" class="muted hidden">Loading…</div>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="panel">
+        <h2>Paused</h2>
+        <div class="menu">
+          <button id="pResume" class="primary">Resume</button>
+          <button id="pWardrobe">Wardrobe</button>
+          <button id="pRel">Relationships</button>
+          <button id="pReport">Report a problem (F9)</button>
+          <button id="pEpisodes">Episodes</button>
+          <button id="pSettings">Settings</button>
+          <button id="pTitle">Save &amp; quit to title</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="episodes" class="overlay hidden">
+      <div class="panel wide">
+        <div class="panel-head"><h2>Episodes</h2><button class="close">✕</button></div>
+        <p class="muted">Replaying an episode rewinds your story to the start of that episode.</p>
+        <div id="epGrid" class="ep-grid"></div>
+      </div>
+    </div>
+
+    <div id="rel" class="overlay hidden">
+      <div class="panel">
+        <div class="panel-head"><h2>Relationships</h2><button class="close">✕</button></div>
+        <div id="relList"></div>
+      </div>
+    </div>
+
+    <div id="settings" class="overlay hidden">
+      <div class="panel">
+        <div class="panel-head"><h2>Settings</h2><button class="close">✕</button></div>
+        <label>Text speed <input id="sSpeed" type="range" min="0" max="100"></label>
+        <label>Music volume <input id="sMusic" type="range" min="0" max="100"></label>
+        <label>Sound effects <input id="sSfx" type="range" min="0" max="100"></label>
+        <label>Layout <select id="sLayout"><option value="classic">Classic (you in the corner)</option><option value="side">Side by side</option></select></label>
+        <label class="row"><input id="sFx" type="checkbox"> Emoji reactions</label>
+        <label class="row"><input id="sFull" type="checkbox"> Fullscreen (F11)</label>
+        <p id="ver" class="muted"></p>
+      </div>
+    </div>
+
+    <div id="logview" class="overlay hidden">
+      <div class="panel wide">
+        <div class="panel-head"><h2>History</h2><button class="close">✕</button></div>
+        <div id="logList"></div>
+      </div>
+    </div>
+
+    <div id="ask" class="overlay hidden">
+      <div class="panel">
+        <h2 id="askTitle"></h2>
+        <input id="askInput" maxlength="64" autocomplete="off">
+        <div class="menu"><button id="askOk" class="primary">OK</button></div>
+      </div>
+    </div>
+
+    <div id="confirm" class="overlay hidden">
+      <div class="panel">
+        <p id="confirmText"></p>
+        <div class="menu row2"><button id="confirmYes" class="primary">Yes</button><button id="confirmNo">Cancel</button></div>
+      </div>
+    </div>
+
+    <div id="custom" class="overlay hidden">
+      <div class="wd" id="wd">
+        <div class="wd-top">
+          <div class="wd-title"><svg viewBox="0 0 48 32" class="ico"><path d="M24 9a4 4 0 1 1 4-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M24 9v3L4 27h40L24 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg><span id="wdTitle">Wardrobe</span></div>
+          <div id="wdOcc" class="wd-occ"></div>
+          <button id="wdX" class="wd-x" title="Close">✕</button>
+        </div>
+        <div id="wdBgs" class="wd-bgs"></div>
+        <div class="wd-main">
+          <div id="custPreview" class="wd-preview"></div>
+          <div class="wd-panel">
+            <div id="wdRail" class="wd-rail"></div>
+            <div class="wd-list">
+              <div id="custVariants" class="chips"></div>
+              <div id="custItems" class="wd-items"></div>
+            </div>
+          </div>
+        </div>
+        <button id="custDone" class="wd-close">Close</button>
+      </div>
+    </div>
+
+    <div id="epend" class="overlay hidden">
+      <div class="panel">
+        <h2>Episode complete</h2>
+        <p id="ependText" class="muted"></p>
+        <div class="menu">
+          <button id="eNext" class="primary">Next episode</button>
+          <button id="eTitle">Back to title</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<audio id="music1" loop preload="auto"></audio>
+<audio id="music2" loop preload="auto"></audio>
+<audio id="sfx" preload="auto"></audio>
+<script src="engine.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

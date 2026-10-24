@@ -5,7 +5,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "1.1.4";
+  const VERSION = "1.1.5";
   const CMP = {
     0: (a, b) => a == b, 1: (a, b) => a != b, 2: (a, b) => a < b,
     3: (a, b) => a > b, 4: (a, b) => a >= b, 5: (a, b) => a <= b,
@@ -19,6 +19,9 @@
     "SetSkin", "MassSetSkin", "SetCustomization", "ModifyCharacter", "SetExpression", "MassSetExpression", "PlayAudio"]);
 
   const norm = (s) => String(s ?? "").trim().toLowerCase();
+  /** Text comparison as the app did it: equal / not equal ignore case and surrounding spaces ("Aj" = "AJ"). */
+  const textCmp = (mode, a, b) => (mode === 0 || mode === 1 || mode == null)
+    ? ((norm(a) === norm(b)) === (mode !== 1)) : (CMP[mode] || CMP[0])(String(a ?? ""), String(b ?? ""));
   const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   /* ------------------------------------------------------------------ text keys */
@@ -117,6 +120,8 @@
       default: return null;
     }
   }
+  /** Built-in value of one check ("Logic Node Target Parameter (4)"...): never a story variable, whatever its name. */
+  const isNodeConst = (name) => /target parameter/i.test(String(name || ""));
   const isParamObj = (o) => !!o && typeof o.type === "number" && ("defaultIntValue" in o || "defaultBoolValue" in o ||
     "defaultStringValue" in o || "defaultFloatValue" in o);
 
@@ -377,7 +382,8 @@
       this.canonMap = {};
       for (const o of this.objects.values()) {
         if (o._c !== "CharacterSettings") continue;
-        const info = { key: o._k, name: o.characterName || o.m_Name, gender: o.gender, avatar: null, traits: null, isPlayer: false };
+        const info = { key: o._k, name: o.characterName || o.m_Name, gender: o.gender, avatar: null, traits: null, isPlayer: false,
+          prop: !o.characterName };   // no display name: a prop such as Season 1's paintings, not an Islander
         for (const b of o.behaviours || []) {
           this.behaviourOwner[b] = o._k;
           const bo = this.get(b);
@@ -386,26 +392,31 @@
           if (bo._c === "CharacterTraitsBehaviour") info.traits = bo;
           if (bo._c === "PlayerBehaviour") { info.isPlayer = true; info.avatar = bo.avatar || (bo.avatars || [])[0] || null; }
         }
-        // Prefer the player defined in this season's avatar pack over leftovers in shared story packs.
-        if (info.isPlayer) {
-          const inAvatars = /_avatars$/.test(this.bundleOfCab[o._k.split(":")[0]] || "");
-          if (!this.playerKey || inAvatars) this.playerKey = o._k;
-        }
         this.characters[o._k] = info;
       }
-      if (!this.playerKey) {
-        for (const c of Object.values(this.characters)) {
-          const av = this.get(c.avatar);
-          if (av && /^Player/.test(av.m_Name)) { this.playerKey = c.key; c.isPlayer = true; break; }
-        }
-      }
-      // A story pack's own copy of an Islander (same name, same art) is the avatar pack's Islander.
+      // Which character is you: the player defined in this season's avatar pack (Seasons 1-2), otherwise the avatar
+      // pack's own "Player (...)" character - in Season 3 that's "Rica" (art "Player (2020)"). Season 3's story packs
+      // also carry leftover Season 2-style players ("You", art "Player (2019)"); they are not you in Season 3.
+      const inAv = (k) => /_avatars$/.test(this.bundleOfCab[k.split(":")[0]] || "");
+      const avName = (c) => (this.get(c.avatar) || {}).m_Name || "";
+      const all = Object.values(this.characters);
+      const me = all.filter((c) => c.isPlayer && inAv(c.key)).pop()
+        || all.find((c) => inAv(c.key) && /^Player\b/.test(avName(c)))
+        || all.find((c) => c.isPlayer)
+        || all.find((c) => /^Player/.test(avName(c)));
+      if (me) { this.playerKey = me.key; me.isPlayer = true; }
+      // A leftover copy of an Islander inside a story pack (same name, same art) is the avatar pack's Islander.
+      // Characters in the avatar pack itself are never merged: Season 1 deliberately has several that share a name and
+      // art (Levi, Player_Partner, Lie_Detector_Partner... are all "Levi" until the story assigns the shared roles).
       const main = new Map();
       for (const c of Object.values(this.characters))
-        if (!c.isPlayer && c.name && /_avatars$/.test(this.bundleOfCab[c.key.split(":")[0]] || ""))
-          main.set(norm(c.name) + "|" + (c.avatar || ""), c.key);
+        if (!c.isPlayer && c.name && inAv(c.key)) {
+          const id = norm(c.name) + "|" + (c.avatar || "");
+          main.set(id, main.has(id) ? null : c.key);          // null: more than one, so no safe match
+        }
       for (const c of Object.values(this.characters)) {
-        if (c.isPlayer || !c.name) continue;
+        if (c.isPlayer) { if (c.key !== this.playerKey) this.canonMap[c.key] = this.playerKey; continue; }   // other players: you
+        if (!c.name || inAv(c.key)) continue;
         const m = main.get(norm(c.name) + "|" + (c.avatar || ""));
         if (m && m !== c.key) this.canonMap[c.key] = m;
       }
@@ -508,7 +519,13 @@
     }
     /** True if a variable holds a real value (set in this episode or remembered from an earlier one). */
     known(name) { return !!name && (this.touched.has(name) || this.remembered.has(name)); }
-    paramValue(name) { return name ? this.raw[name] : undefined; }
+    paramValue(name) { name = this.vname(name); return name ? this.raw[name] : undefined; }
+    /** Season 2's murder mystery names some variables with a stray brace ("{CMM_E00_partner"): use the real one. */
+    vname(name) {
+      if (!name || typeof name !== "string" || !/[{}]/.test(name) || name in this.raw) return name;
+      const n = name.replace(/[{}]/g, "").trim();
+      return n in this.raw || n in this.S.paramDefaults() ? n : name;
+    }
     paramName(ref) { const p = this.S.get(ref); return p ? p.m_Name : null; }
     paramDefault(p) { return paramDefault(p); }
     /** Starting value of a variable: its file default, except that relationship stats start at neutral. */
@@ -522,15 +539,17 @@
     initParams(ctrl) {
       for (const r of ctrl.parameterList || []) {
         const p = this.S.get(r);
-        if (p && p.m_Name && !(p.m_Name in this.raw)) this.raw[p.m_Name] = this.startValue(p);
+        if (p && p.m_Name && !isNodeConst(p.m_Name) && !(p.m_Name in this.raw)) this.raw[p.m_Name] = this.startValue(p);
       }
     }
     getParamByRef(ref) {
       const p = this.S.get(ref);
       if (!p) return undefined;
+      // A check's own built-in value ("Logic Node Target Parameter"...) is always its own value. Fusebox gave hundreds
+      // of them the same few names, and a story variable elsewhere with the same name must never stand in for it
+      // (it made Season 1 checks compare your choice against "true" or "conciliatory" instead of "levi").
+      if (p.hidden || isNodeConst(p.m_Name) || (!this.S.isStoryParam(p) && !(p.m_Name in this.raw))) return paramDefault(p);
       if (p.m_Name in this.raw) return this.raw[p.m_Name];
-      // Node-private constants (e.g. "Logic Node Target Parameter") are not story variables.
-      if (!this.S.isStoryParam(p)) return paramDefault(p);
       return (this.raw[p.m_Name] = this.startValue(p));
     }
     isParamRef(k) { return typeof k === "string" && k.startsWith("cab-") && isParamObj(this.S.get(k)); }
@@ -558,9 +577,14 @@
       if (pk) { const n = this.paramName(pk); if (n) this.params[n] = v; }
     }
     /** Bring back everything you've done this season before this episode (most recent wins). */
-    recall() {
+    /** keepOwn: an import partway through an episode must not undo what you chose earlier in this same episode. */
+    recall(keepOwn) {
       const mem = memoryBefore(this.S, this.save, this.ep);
-      for (const [k, v] of Object.entries(mem)) { this.raw[k] = v; this.remembered.add(k); }
+      for (const [k, v] of Object.entries(mem)) {
+        if (keepOwn && this.touched.has(k)) continue;
+        if (isNodeConst(k)) continue;                       // never a story variable (older saves may hold one)
+        this.raw[k] = v; this.remembered.add(k);
+      }
       return mem;
     }
 
@@ -751,15 +775,26 @@
           const ch = this.S.get(ck);
           if (!ch) return;
           if (!this.conditionsPass(ch.conditions)) return;
+          const image = (ch.image && this.S.sprites[ch.image]) || null;
           opts.push({ i, occ: names.slice(0, i).filter((x) => x === ch.m_Name).length, key: ck, slot: ch.m_Name, raw: ch.text || "",
             text: this.fmt(this.choiceText(ch), n.tokens),
-            premium: /Premium/.test(ch._c), gems: ch.gemCosts || 0, image: (ch.image && this.S.sprites[ch.image]) || null });
+            premium: /Premium/.test(ch._c), gems: ch.gemCosts || 0, image, outfit: image ? null : this.optionOutfit(n, ch) });
         });
+        // Outfit previews only for a real outfit choice: options that put you in different outfits.
+        const CLOTHES = /bikini|swim|dress|outfit|pyjama|pajama|nightie|onesie|robe|kimono|gown|skirt|shorts|jeans|trousers|shirt|top\b|jumpsuit|playsuit|lingerie|cami|vest|suit\b|wear\b|get changed|leopard|sequin|crochet|frill|strapp/i;
+        if (new Set(opts.map((o) => o.outfit).filter(Boolean)).size < 2 || opts.filter((o) => CLOTHES.test(o.text)).length < 2)
+          for (const o of opts) o.outfit = null;
         if (!opts.length) (n.choices || []).forEach((ck, i) => {
           const ch = this.S.get(ck);
           if (ch) opts.push({ i, occ: names.slice(0, i).filter((x) => x === ch.m_Name).length, key: ck, slot: ch.m_Name, raw: ch.text || "",
             text: this.fmt(this.choiceText(ch), n.tokens) });
         });
+        // Outfit choices ("What to wear...", Season 1): show you wearing each option.
+        const looks = opts.map((o) => this.optionOutfit(n, this.S.get(o.key)));
+        if (looks.filter(Boolean).length >= 2) {
+          const now = this.save.skins[this.S.playerKey] || null;   // an option that keeps your outfit shows what you're wearing
+          opts.forEach((o, i) => { if (looks[i] || now) o.outfit = looks[i] || now; });
+        }
         const prompt = this.text(n);
         const sk = this.speakerOf(n);
         this.narrFocus = !sk && prompt ? this.narrationFocus(prompt) : null;
@@ -821,6 +856,38 @@
       }
     }
 
+    /** The outfit an option puts you in (found a few steps down its path), so the option can show you wearing it. */
+    optionOutfit(n, ch) {
+      const t = (n.transitions || []).map((x) => this.S.get(x)).find((x) => x && !x.mute && x.fromSlot === ch.m_Name);
+      const pc = this.S.characters[this.S.playerKey], av = pc && this.S.get((this.save.avatars || {})[this.S.playerKey] || pc.avatar);
+      if (!t || !av) return null;
+      if (!this._skinNames || this._skinNamesAv !== av._k) { this._skinNames = new Set((av.skins || []).map((x) => (this.S.get(x) || {}).m_Name)); this._skinNamesAv = av._k; }
+      let k = t.destination;
+      for (let i = 0; i < 6 && k; i++) {
+        const d = this.S.get(k);
+        if (!d) break;
+        for (const a of d.actions || []) {
+          const A = this.S.get(a);
+          if (!A || A._c !== "SetSkin" || this.charOf(A) !== this.S.playerKey) continue;
+          const name = A.IsSkinNameSelected === 0 ? this.val(A.skinNameParameter) : A.skinName;
+          if (name && name !== "Default" && this._skinNames.has(name)) return name;
+        }
+        for (const a of d.actions || []) {          // Season 1 also stores the outfit in a variable first
+          const A = this.S.get(a);
+          if (A && A._c === "SetString" && A.value && A.value.constant && this._skinNames.has(A.value.value) && A.value.value !== "Default") return A.value.value;
+        }
+        for (const m of d.modifications || []) {
+          const M = this.S.get(m);
+          if (M && M._c === "StringModification" && M.newValue && M.newValue.constant && this._skinNames.has(M.newValue.value) && M.newValue.value !== "Default") return M.newValue.value;
+        }
+        if ((LINE_NODES.has(d._c) || CHOICE_NODES.has(d._c)) && (d.text || d.femaleText)) break;   // only the steps right after the pick
+        const nx = (d.transitions || []).map((x) => this.S.get(x)).filter((x) => x && !x.mute);
+        if (nx.length !== 1) break;
+        k = nx[0].destination;
+      }
+      return null;
+    }
+
     /** Emoji burst ("exploji"): picture, how many, and who it bursts from. Plays with the next thing shown. */
     queueEffect(n) {
       const base = this.S.effects[n.baseParticleEffect];
@@ -848,7 +915,7 @@
     }
 
     storyCase(lc) {
-      const name = lc.parameterName;
+      const name = this.vname(lc.parameterName);
       if (lc._c === "InventoryLogicalCase") {
         let have = this.save.inventory[name] || 0;
         const want = Number(this.val(lc.targetValue)) || 0;
@@ -865,7 +932,7 @@
       }
       if (lc._c === "IntLogicalCase" || lc._c === "FloatLogicalCase") return (CMP[lc.comparisonMode] || CMP[0])(Number(a) || 0, Number(b) || 0);
       if (lc._c === "StatLogicalCase") return this.statCompare(this.statOf(this.raw, name), b, lc.comparisonMode);
-      return (CMP[lc.comparisonMode] || CMP[0])(String(a ?? ""), String(b ?? ""));
+      return textCmp(lc.comparisonMode, a, b);
     }
 
     traitCase(ch, lc) {
@@ -875,7 +942,7 @@
       if (lc._c === "StatLogicalCase") return this.statCompare(this.statOf(t, lc.parameterName), b, lc.comparisonMode);
       if (lc._c === "BoolLogicalCase") return (CMP[lc.comparisonMode] || CMP[0])(!!a, !!b);
       if (lc._c === "IntLogicalCase" || lc._c === "FloatLogicalCase") return (CMP[lc.comparisonMode] || CMP[0])(Number(a) || 0, Number(b) || 0);
-      return (CMP[lc.comparisonMode] || CMP[0])(String(a ?? ""), String(b ?? ""));
+      return textCmp(lc.comparisonMode, a, b);
     }
 
     statCompare(v, rangeRef, mode) {
@@ -898,7 +965,7 @@
       if (!m) return;
       if (traitNode && !ch) { this.S.warn("trait change without a character"); return; }
       const store = ch ? this.traitsFor(ch) : this.params;
-      const name = m.parameterName;
+      const name = ch ? m.parameterName : this.vname(m.parameterName);
       if (!name) return;
       switch (m._c) {
         case "StatModification": {
@@ -938,7 +1005,7 @@
         const c = this.S.get(ck);
         if (!c || c.enabled === 0) continue;
         if (c._c === "CompareString") {
-          if (!(CMP[c.comparer] || CMP[0])(String(this.val(c.parameterA) ?? ""), String(this.val(c.parameterB) ?? ""))) return false;
+          if (!textCmp(c.comparer, this.val(c.parameterA), this.val(c.parameterB))) return false;
         } else if (c._c === "CompareBool") {
           let v = this.val(c.parameter);
           const of = outfitFlag(this.refParamName(c.parameter));
@@ -1110,7 +1177,7 @@
           }
           // Everything you've done this season so far comes back (most recent choice wins), whichever earlier
           // episode the file names, so a choice from days ago is never forgotten.
-          this.recall();
+          this.recall(true);
           if (id !== this.ep.controllerId && !stateAt(this.S, this.save, id)) this.S.warn("import: earlier episode not played yet");
           return;
         }
@@ -1166,6 +1233,13 @@
           // Leave out the ignored Islanders and, if asked, anyone no longer in the villa.
           const toChar = (r) => { const o = this.S.get(r); return o && o._c === "ReferenceCharacterSettings" ? this.resolveRef(r) : this.ck(r); };
           const ignored = new Set((a.ignoredCharacters || []).map(toChar).concat((a.ignoredReferenceCharacters || []).map((r) => this.resolveRef(r))));
+          // "Who else you fancy" (Season 2's Current_Beau) is never your own partner: two Day 3 picks in Season 2's files
+          // forgot to exclude them, so your partner came up as your second love interest too.
+          const roleName = (this.S.get(a.referenceCharacter) || {}).m_Name || "";
+          if (/beau|crush|second|fancy/i.test(roleName)) {
+            const pp = this.save.refs["R:player_partner"] || this.save.refs["R:li3_player_partner"];
+            if (pp) ignored.add(this.ck(pp));
+          }
           const cands = (a.candidateCharacters || []).map(toChar).filter((k) => k && !ignored.has(k)
             && !(a.onlyIncludeInTheVillaCharacters && this.traitsFor(k).in_the_villa === false));
           let best = null, bestV = null;
@@ -1194,7 +1268,13 @@
           // Copies the player's chosen name into a story variable.
           if (this.save.playerName) this.setParamRef(a.playerNameParameter, this.save.playerName);
           return;
-        case "ShowIntroduction": { const k = this.charOf(a); v.toast = { headline: a.headline || "", name: this.charName(k), n: Math.random() }; return; }
+        case "ShowIntroduction": {
+          // The app's introduction card shows the character. Season 1's paintings are "introduced" this way too.
+          const k = this.charOf(a);
+          v.toast = { headline: a.headline || "", name: this.charName(k), n: Math.random() };
+          if (k && k !== this.S.playerKey) v.intro = k;
+          return;
+        }
         case "ShowGenericImageIntroduction": v.toast = { headline: a.headline || "", name: a.subheading || "", n: Math.random() }; return;
         case "AddItemToStoryInventory": {
           const kk = a.storyInventoryMetadataKey; if (kk) this.save.inventory[kk] = (this.save.inventory[kk] || 0) + (a.quantityToAdd || 1); return;
@@ -1368,9 +1448,12 @@
       // Otherwise whoever just spoke stays in view for the narration right after their line.
       const ls = this.lastSpeaker;
       if (!focus && !this.noCarry && ls && this.prevSpeaker === ls && (v.stage.includes(ls) || v.overflow.includes(ls))) focus = ls;
+      // Someone only heard - the story hasn't put them on screen - while in their bare outfit (Tim singing behind the
+      // shower door in Season 1) stays off screen: you see their name, not them.
+      if (focus && focus !== this.S.playerKey && !v.stage.includes(focus) && !v.overflow.includes(focus) && undressed(this.S, this.save, focus, v.expr[focus])) { focus = null; named = false; }
       const s = { bg: v.bg, stage: v.stage.slice(), overflow: v.overflow.slice(), speaker, focus, named, music: v.music, sfx: v.sfx,
-        toast: v.toast, effect: v.effect || null };
-      v.sfx = null; v.toast = null; v.effect = null; this.lastTraitChar = null; this.narrFocus = null;
+        toast: v.toast, effect: v.effect || null, intro: v.intro || null };
+      v.sfx = null; v.toast = null; v.effect = null; v.intro = null; this.lastTraitChar = null; this.narrFocus = null;
       this.prevSpeaker = speaker || (named || this.noCarry ? null : this.prevSpeaker);
       this.noCarry = false;
       return s;
@@ -1579,16 +1662,31 @@
   }
 
   /* ------------------------------------------------------------------ avatar layers */
-  function avatarLayers(S, save, charKey, expr, skinOverride) {
+  const CLOTH_SLOT = /cloth|layer\d|^cover$|outfit|top$|bottom|swim|dress|shirt|short|trouser|towel/i;
+  /** Would be drawn with no clothing at all, though they're a person who wears clothes (not an animal, baby or doll). */
+  function undressed(S, save, k, expr) {
+    const av = S.get(avatarKeyFor(S, save, k));
+    if (!av || !(av.slots || []).some((sl) => CLOTH_SLOT.test((S.get(sl) || {}).m_Name || ""))) return false;
+    const lay = avatarLayers(S, save, k, expr);
+    return lay.length > 0 && !lay.some((l) => CLOTH_SLOT.test(l.slot));
+  }
+  /** Which art a character is drawn with right now (their own, or the Islander currently playing their role). */
+  function avatarKeyFor(S, save, charKey) {
     charKey = S.canon(charKey);
     const c = S.characters[charKey];
-    if (!c) return [];
+    if (!c) return null;
     const role = (save.roles || {})[charKey];
     const own = (save.avatars || {})[charKey];
     let ak = own || (role && role.avatar) || c.avatar;
     // An Islander drawn with someone else's art in the files (Season 1 "Miles"): use their own art.
     if (!own && charKey !== S.playerKey && S.avatarForName) ak = S.avatarForName((role && role.name) || c.name, ak);
-    const av = S.get(ak) || S.get(c.avatar);
+    return S.get(ak) ? ak : c.avatar;
+  }
+  function avatarLayers(S, save, charKey, expr, skinOverride) {
+    charKey = S.canon(charKey);
+    const c = S.characters[charKey];
+    if (!c) return [];
+    const av = S.get(avatarKeyFor(S, save, charKey));
     if (!av) return [];
     const skinName = skinOverride || save.skins[charKey];
     let skin = null;
@@ -1851,6 +1949,22 @@
         for (const [n, v] of Object.entries(t)) if ((types[n] === 2 || types[n] === 3) && typeof v === "number") { t[n] = v >= 60; changed = true; }
       }
     }
+    // Before 1.1.4 Season 3 used a leftover Season 2-style player, not Rica (your character): move the look across.
+    const pk = S.playerKey;
+    for (const field of ["custom", "skins", "avatars", "traits"]) {
+      const m = save[field];
+      if (!m || !pk) continue;
+      for (const k of Object.keys(m)) {
+        if (k === pk) continue;
+        const known = S.characters[k];
+        const oldPlayer = known ? S.canon(k) === pk : /_stories/.test(S.bundleOfCab[k.split(":")[0]] || "");
+        if (!oldPlayer) continue;
+        if (!(pk in m)) m[pk] = m[k];
+        delete m[k]; changed = true;
+      }
+    }
+    if (save.skins && pk && save.skins[pk] && !(S.get((S.characters[pk] || {}).avatar) || { skins: [] }).skins
+      .some((x) => (S.get(x) || {}).m_Name === save.skins[pk])) { delete save.skins[pk]; changed = true; }
     // Roles ("your partner"...) are now remembered by name rather than by the pack the story file was in.
     for (const k of Object.keys(save.refs)) {
       if (!k.startsWith("cab-")) continue;
@@ -1861,6 +1975,55 @@
       changed = true;
     }
     return changed;
+  }
+
+  const CLOTHING_SLOT = /cloth|layer\s*\d|cover|outfit|swim|top|bottom|dress|shirt|short|trouser|skirt|bikini/i;
+  /** True if a character would be drawn with no clothing at all (e.g. Tim behind the shower door in his base body). */
+  function isUnclothed(S, save, k, expr) {
+    const c = S.characters[S.canon(k)];
+    if (!c || c.prop) return false;
+    const av = S.get(avatarKeyFor(S, save, S.canon(k)));
+    if (!av || !(av.slots || []).some((sl) => CLOTHING_SLOT.test((S.get(sl) || {}).m_Name || ""))) return false;
+    return !avatarLayers(S, save, k, expr).some((l) => CLOTHING_SLOT.test(l.slot || ""));
+  }
+  /** Story variables as they stand now: the episode being played, or everything finished so far. */
+  function currentState(S, save, run) {
+    if (run) return run.raw;
+    const st = {}, defs = S.paramDefaults();
+    for (const e of S.episodes) layerEpisode(st, save, e.controllerId, defs);
+    return st;
+  }
+  /**
+   * Season 1 keeps relationships as "<who>_affinity" levels: 0 dislike, 1 neutral, 2 like, 3 love. <who> is either one
+   * Islander ("mason_affinity") or a shared role ("jasper_miles_affinity": whoever you coupled with on Day 1,
+   * "player_partner_affinity": your partner now...). A role's level is shown under whoever plays that role in your story
+   * and wins over that person's own early value; a role nobody has been given yet is left out.
+   */
+  function seasonOneAffinity(S, save, run) {
+    const st = currentState(S, save, run), roles = (save && save.roles) || {};
+    const byInternal = new Map();
+    for (const c of Object.values(S.characters)) {
+      if (c.isPlayer) continue;
+      const o = S.get(c.key) || {};
+      byInternal.set(norm(o.m_Name), c.key);
+      if (!byInternal.has(norm(c.name))) byInternal.set(norm(c.name), c.key);
+    }
+    const nameOf = (k) => (roles[k] && roles[k].name) || (S.characters[k] || {}).name || "";
+    const rows = new Map();   // shown name -> row
+    for (const [v, x] of Object.entries(st)) {
+      const m = /^(.+)_affinity$/i.exec(v);
+      if (!m || typeof x !== "number") continue;
+      const k = byInternal.get(norm(m[1]));
+      if (!k) continue;                                     // a counter, not a person
+      const isRole = m[1].includes("_");
+      if (isRole && !roles[k]) continue;                    // shared role not given to anyone yet
+      const name = nameOf(k);
+      if (!name || /_/.test(name)) continue;
+      const rank = /player_partner/i.test(m[1]) ? 3 : isRole ? 2 : 1;
+      const prev = rows.get(norm(name));
+      if (!prev || rank > prev.rank) rows.set(norm(name), { k, name, level: Math.max(0, Math.min(3, x)), rank, role: isRole });
+    }
+    return [...rows.values()];
   }
 
   /** Everything useful for tracking down a story problem, as one object (saved as problem_report.json). */
@@ -2013,9 +2176,9 @@
     return avatarLayers(S, save, charKey, "Neutral", skin).filter((l) => !BODY_SLOT.test(l.slot) && !isEmpty(l));
   }
 
-  const api = { VERSION, Season, Run, newSave, avatarLayers, customizationModel, applyCustomization, selectedItem,
+  const api = { VERSION, Season, Run, newSave, avatarLayers, avatarKeyFor, undressed, customizationModel, applyCustomization, selectedItem,
     wardrobeModel, outfitCategories, applyOutfitOption, outfitSig, clothingLayers, occasionLabel, itemLayers,
-    applySeason1Hair, hairLayers, repairLook, migrateSave, debugReport, memoryBefore, stateAt, stateInSave,
+    applySeason1Hair, hairLayers, repairLook, migrateSave, debugReport, isUnclothed, currentState, seasonOneAffinity, memoryBefore, stateAt, stateInSave,
     isKeyLike, humanizeKey, statStep, outfitFlag, boughtScore };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.LIEngine = api;

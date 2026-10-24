@@ -121,6 +121,7 @@ button { font: inherit; cursor: pointer; }
   font-family: "Josefin Sans", "Mulish", sans-serif; color: #3b3640;
   box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 #hud button:hover { background: #fff; }
+#hud button#btnSkip.on { background: var(--pink); color: #fff; }
 #epbadge { position: absolute; top: calc(9.5 * var(--u)); right: 1.6cqw; color: #fff; font-size: calc(2 * var(--u)); text-shadow: 0 1px 4px #000; }
 
 #toast { position: absolute; top: calc(10 * var(--u)); left: 1.6cqw; background: var(--pink); color: #fff;
@@ -174,6 +175,7 @@ input[type=range] { width: calc(30 * var(--u)); accent-color: var(--pink); }
 #relList .rel.role b { color: var(--pink); }
 #relList .spark { color: var(--pink); font-weight: 600; }
 #relList .nospark { color: var(--muted); font-weight: 400; }
+#relList .lvl { min-width: calc(14 * var(--u)); text-align: right; color: var(--pink); font-weight: 600; font-size: .9em; }
 #ver { margin-top: calc(1.5 * var(--u)); font-size: .85em; }
 
 #logList .l { margin: calc(1.2 * var(--u)) 0; line-height: 1.4; }
@@ -184,7 +186,11 @@ input[type=range] { width: calc(30 * var(--u)); accent-color: var(--pink); }
 /* picture choices (looks, colours) */
 #choices.pics { flex-direction: row; flex-wrap: wrap; justify-content: center; width: min(90cqw, calc(150 * var(--u))); }
 #choices button.pic { border-radius: calc(2 * var(--u)); padding: calc(1 * var(--u)); width: calc(17 * var(--u)); display: flex; flex-direction: column; align-items: center; gap: calc(.6 * var(--u)); font-size: calc(2.2 * var(--u)); }
-#choices button.pic img { width: 100%; height: calc(13 * var(--u)); object-fit: contain; }
+#choices button.pic > img { width: 100%; height: calc(13 * var(--u)); object-fit: contain; }
+#choices button.pic.look { width: calc(21 * var(--u)); }
+#choices button.pic .pv { width: 100%; height: calc(30 * var(--u)); position: relative; overflow: hidden; }
+#choices .pv .thumb { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#choices .pv .thumb img { position: absolute; }
 
 /* wardrobe (style of the game's own wardrobe screen) */
 #custom { background: #1d2c3d; backdrop-filter: none; align-items: stretch; justify-content: stretch; }
@@ -276,4 +282,17 @@ select { font: inherit; padding: calc(.6 * var(--u)) calc(1.2 * var(--u)); borde
   .wd-close { font-size: calc(6.5 * var(--u)); padding: calc(3 * var(--u)); }
   label { gap: calc(3 * var(--u)); }
   input[type=range] { width: 40cqw; }
+}
+
+/* Introduction card (Season 1's paintings, and anyone introduced while not standing in the scene) */
+#introCard { position: absolute; right: 3cqw; top: calc(12 * var(--u)); z-index: 4;
+  width: min(40cqh, 26cqw); aspect-ratio: 1 / 1; background: #fff; border-radius: calc(1.6 * var(--u));
+  box-shadow: 0 calc(.8 * var(--u)) calc(3 * var(--u)) rgba(0,0,0,.28); padding: calc(1.2 * var(--u)); transition: opacity .25s; }
+#introCard.hidden { display: block; opacity: 0; pointer-events: none; }
+#introCard .frame { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: calc(1 * var(--u)); background: #f6f1ee; }
+#introCard .thumb { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#introCard .thumb img { position: absolute; }
+@media (orientation: portrait) {
+  /* Phone held upright: in the free space on the right, below the speech box and clear of you and the Islander's face */
+  #introCard { right: 4cqw; top: 54cqh; width: 42cqw; }
 }

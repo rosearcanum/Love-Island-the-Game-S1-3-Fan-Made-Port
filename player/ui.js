@@ -30,6 +30,7 @@
   /* ------------------------------------------------------------ state */
   let seasons = [], seasonId = null, S = null, save = null, run = null, step = null, base = "";
   let typing = null, history = [], busy = false;
+  let skipping = false, skipTimer = null;   // Skip: fast-forward through lines up to the next decision
 
   /* ------------------------------------------------------------ overlays */
   const overlays = ["title", "pause", "episodes", "rel", "settings", "logview", "ask", "confirm", "epend", "custom"];
@@ -76,8 +77,13 @@
   }
   function disableTitle(v) { ["btnContinue", "btnNew", "btnEpisodes"].forEach((id) => ($(id).disabled = v)); }
 
+  let wantSeason = null;   // a season tapped while another one was still loading
   async function selectSeason(id) {
-    if (busy) return;
+    if (busy) {
+      wantSeason = id;
+      document.querySelectorAll("#seasonTabs button").forEach((b) => b.classList.toggle("on", b.dataset.id === id));
+      return;
+    }
     busy = true; disableTitle(true); show("loading"); $("titleInfo").textContent = "";
     document.querySelectorAll("#seasonTabs button").forEach((b) => b.classList.toggle("on", b.dataset.id === id));
     try {
@@ -99,6 +105,9 @@
     } catch (e) {
       console.error(e); $("titleInfo").textContent = "Couldn't load this season: " + e.message;
     } finally { hide("loading"); busy = false; }
+    // Tapped another season while this one loaded: switch to it now (never start the wrong season).
+    if (wantSeason && wantSeason !== seasonId) { const w = wantSeason; wantSeason = null; return selectSeason(w); }
+    wantSeason = null;
   }
   const playable = () => S.episodes.filter((e) => !e.abAlt);
   const epLabel = (ep) => `Day ${ep.day} · Episode ${ep.ep}`;
@@ -120,7 +129,9 @@
   /* ------------------------------------------------------------ game flow */
   async function newGame() {
     if (save && !(await confirmBox("Start a new game? Your current progress in this season will be replaced."))) return;
-    const name = await askBox("What's your name?", "", 20);
+    // Pre-filled with the name you used in your other seasons, if any.
+    const known = ((S && S.crossSaves) || []).map((sv) => sv && sv.playerName).find((n) => n && n !== "You") || "";
+    const name = await askBox("What's your name?", known, 20);
     save = E.newSave(seasonId); save.playerName = name || "You"; save.seen = [];
     history = [];
     await startEpisode(playable()[0], null);
@@ -170,6 +181,7 @@
     show("epend");
   }
   async function toTitle() {
+    setSkip(false);
     if (run && !run.done) await autosave(true);
     run = null; step = null; stopTyping();
     hide("hud"); hide("epbadge"); hide("textbox"); hide("choices"); hide("pause");
@@ -212,11 +224,12 @@
     const v = st.view || {};
     setBg(v.bg);
     layoutChars(v, st.speaker);
+    updateIntroCard(st);
     renderOverflow(v);
-    if (v.toast) showToast(v.toast);
+    if (v.toast && !skipping) showToast(v.toast);
     playMusic(v.music);
     if (v.sfx) playSfx(v.sfx.file);
-    if (v.effect && settings.fx !== false) playEffect(v.effect);
+    if (v.effect && settings.fx !== false && !skipping) playEffect(v.effect);
     trackSeen(v, st.speaker);
     hide("choices");
     if (st.type !== "openworld" && !$("mapWrap").classList.contains("hidden")) leaveMap();
@@ -226,7 +239,7 @@
     } else if (st.type === "choice") {
       if (st.prompt) { showText({ text: st.prompt, name: run.charName(st.speaker), narrator: !st.speaker, speaker: st.speaker }, true); history.push({ kind: st.speaker ? "line" : "narr", name: st.speaker ? run.charName(st.speaker) : "", text: st.prompt }); }
       else hide("textbox");
-      showChoices(st.options.map((o) => ({ label: o.text, premium: o.premium, image: o.image, pick: () => { history.push({ kind: "pick", text: o.text }); run.choose(o); next(); } })), !st.prompt);
+      showChoices(st.options.map((o) => ({ label: o.text, premium: o.premium, image: o.image, outfit: o.outfit, pick: () => { history.push({ kind: "pick", text: o.text }); run.choose(o); next(); } })), !st.prompt);
     } else if (st.type === "openworld") {
       showMap(st);
     } else if (st.type === "customize") {
@@ -268,6 +281,11 @@
     if (focus && !list.includes(focus)) {
       if (focus === S.playerKey) list.unshift(focus); else list.push(focus);
     }
+    // Never draw an Islander with no clothes on (e.g. Tim singing behind the shower door): they're heard, not shown.
+    for (let i = list.length - 1; i >= 0; i--)
+      if (list[i] !== S.playerKey && E.isUnclothed(S, save, list[i], (run && run.view.expr[list[i]]) || null)) list.splice(i, 1);
+    // You stay in your spot (bottom left) whenever you're with other Islanders, not only while you speak.
+    if (settings.layout !== "side" && !list.includes(S.playerKey) && list.some((k) => k !== S.playerKey)) list.unshift(S.playerKey);
     const r = stage.getBoundingClientRect(), W = r.width, H = r.height, unit = figureUnit();
     const place = new Map();   // key -> {x, y, scale, z}
     if (H > W) {
@@ -306,7 +324,7 @@
       let el = charEls.get(k);
       const at = `translate(${p.x}px, ${p.y}px)`;
       if (!el) {
-        el = document.createElement("div"); el.className = "char gone";
+        el = document.createElement("div"); el.className = "char gone" + (k === S.playerKey ? " me" : ""); el.dataset.k = k;
         el.innerHTML = '<div class="rig"></div>'; el.style.transform = at;
         box.appendChild(el); charEls.set(k, el);
         requestAnimationFrame(() => { if (charEls.get(k) === el) el.classList.remove("gone"); });
@@ -360,7 +378,8 @@
     const token = (rig._tok = (rig._tok || 0) + 1);
     const swap = () => { if (rig._tok === token) rig.replaceChildren(...imgs); };
     const ready = Promise.all(waits).then(() => Promise.all(imgs.map((i) => i.decode().catch(() => {}))));
-    if (!rig.firstChild) { Promise.all(waits).then(swap); return; }
+    // First appearance: show the figure only once every piece has loaded (never half-drawn, e.g. without a face).
+    if (!rig.firstChild) { Promise.race([ready, new Promise((r) => setTimeout(r, 1500))]).then(swap); return; }
     // Changing expression or outfit: keep the old picture up until the new pieces are ready (no blank faces).
     Promise.race([ready, new Promise((r) => setTimeout(r, 700))]).then(swap);
   }
@@ -756,7 +775,26 @@
     for (const k of (v.stage || []).concat(sp ? [sp] : [])) if (k && k !== S.playerKey && !save.seen.includes(k)) save.seen.push(k);
   }
   let toastTimer = null;
+  /* Introduction card: the app shows an introduced character's picture on a card (Season 1's paintings are shown this
+     way while the painter talks about them). It stays up while it's being talked about: until the next introduction,
+     a change of scene or a choice, or for 4 lines. Islanders already standing in the scene don't get a second picture. */
+  let introCard = null;
+  function updateIntroCard(st) {
+    const v = st.view || {};
+    if (v.intro) introCard = { k: v.intro, left: 4, bg: v.bg };
+    else if (introCard && (st.type !== "line" || v.bg !== introCard.bg || --introCard.left <= 0)) introCard = null;
+    const el = $("introCard");
+    if (!introCard || charEls.has(introCard.k)) { el.classList.add("hidden"); el.dataset.k = ""; return; }
+    if (el.dataset.k !== introCard.k + "|" + (save.skins[introCard.k] || "")) {
+      el.dataset.k = introCard.k + "|" + (save.skins[introCard.k] || "");
+      const box = el.querySelector(".frame"); box.innerHTML = "";
+      requestAnimationFrame(() => fitLayers(box, E.avatarLayers(S, save, introCard.k, null), 0.96));
+    }
+    el.classList.remove("hidden");
+  }
+
   function showToast(t) {
+    if (!t || (!t.headline && !t.name)) return;   // nothing to say (e.g. a painting being shown)
     const el = $("toast"); el.innerHTML = ""; el.append(t.headline || "");
     if (t.name) { const b = document.createElement("b"); b.textContent = t.name; el.appendChild(b); }
     show("toast"); clearTimeout(toastTimer); toastTimer = setTimeout(() => hide("toast"), 2600);
@@ -843,7 +881,7 @@
     placeTextbox(st, noMore);
     const tokens = richTokens(st.text), total = tokens.reduce((a, t) => a + (t.t ? [...t.t].length : 0), 0);
     stopTyping();
-    const cps = settings.speed >= 100 ? 0 : 20 + settings.speed * 1.8;
+    const cps = settings.speed >= 100 || skipping ? 0 : 20 + settings.speed * 1.8;
     if (!cps) { $("text").innerHTML = partialHTML(tokens, total); return; }
     let shown = 0; const t0 = performance.now();
     typing = { finish: () => { $("text").innerHTML = partialHTML(tokens, total); stopTyping(); } };
@@ -871,7 +909,13 @@
       const b = document.createElement("button");
       if (o.premium) b.classList.add("premium"); if (o.exit) b.classList.add("exit");
       const k = document.createElement("span"); k.className = "key"; k.textContent = i + 1;
-      if (o.image) {
+      if (o.outfit) {
+        // Outfit choice: show you wearing it
+        b.classList.add("pic", "look"); box.classList.add("pics");
+        const pv = document.createElement("div"); pv.className = "pv";
+        b.append(pv, k, rich(o.label));
+        requestAnimationFrame(() => fitLayers(pv, E.avatarLayers(S, save, S.playerKey, "Happy", o.outfit), 0.97));
+      } else if (o.image) {
         b.classList.add("pic"); box.classList.add("pics");
         const im = document.createElement("img"); im.src = `${base}/sprites/${o.image.file}`; im.alt = o.label;
         b.append(im, k);
@@ -884,9 +928,30 @@
   }
 
   function advance() {
+    if (skipping) { setSkip(false); return; }   // a tap while skipping just stops it
     if (!run || !step || anyOverlay()) return;
     if (typing) { typing.finish(); return; }
     if (step.type === "line") { run.advance(); next(); }
+  }
+
+  /* ------------------------------------------------------------ skip */
+  // Fast-forwards line by line (every line still counts: choices, stats, history and saves work as normal) and stops
+  // by itself at the next decision: a choice, the villa map, a wardrobe or look screen, a name box, or the episode end.
+  function setSkip(on) {
+    skipping = !!on; clearTimeout(skipTimer);
+    $("btnSkip").classList.toggle("on", skipping);
+  }
+  function toggleSkip() {
+    if (skipping) { setSkip(false); return; }
+    if (!run || !step || step.type !== "line" || anyOverlay()) return;
+    setSkip(true); skipTick();
+  }
+  function skipTick() {
+    if (!skipping) return;
+    if (!run || !step || step.type !== "line" || anyOverlay()) { setSkip(false); return; }
+    stopTyping(); run.advance(); next();
+    if (skipping && step && step.type === "line") skipTimer = setTimeout(skipTick, 70);
+    else setSkip(false);
   }
 
   /* ------------------------------------------------------------ audio */
@@ -937,6 +1002,13 @@
     const rows = seen.map((k) => ({ k, n: nameOf(k), a: ((save.traits || {})[k] || {}).affinity }))
       .filter((r) => r.n && (typeof r.a === "number" || typeof r.a === "boolean"))
       .sort((a, b) => (typeof b.a === "number" ? b.a : b.a ? 70 : 50) - (typeof a.a === "number" ? a.a : a.a ? 70 : 50));
+    // Season 1 keeps relationships as levels in story variables ("mason_affinity": 0 dislike ... 3 love).
+    const words = ["Not keen", "Neutral", "Likes you", "Loves you"];
+    if (!rows.length) for (const r of E.seasonOneAffinity(S, save, run)) {
+      if (!r.role && seen.length && !seen.includes(r.k)) continue;   // roles are people you've been with in the story
+      rows.push({ k: r.k, n: r.name, a: (r.level + 1) * 25, word: words[r.level] });
+    }
+    rows.sort((a, b) => (typeof b.a === "number" ? b.a : b.a ? 70 : 50) - (typeof a.a === "number" ? a.a : a.a ? 70 : 50));
     if (!rows.length && !roles.length) list.textContent = "Nobody yet. Get to know the Islanders!";
     for (const r of rows) {
       const d = document.createElement("div"); d.className = "rel";
@@ -947,7 +1019,9 @@
         d.append(s, b); list.appendChild(d); continue;
       }
       const bar = document.createElement("div"); bar.className = "bar"; const i = document.createElement("i"); i.style.width = Math.max(0, Math.min(100, r.a)) + "%"; bar.appendChild(i);
-      d.append(s, bar); list.appendChild(d);
+      d.append(s, bar);
+      if (r.word) { const w = document.createElement("b"); w.className = "lvl"; w.textContent = r.word; d.appendChild(w); }
+      list.appendChild(d);
     }
     show("rel");
   }
@@ -978,7 +1052,7 @@
       } catch (e2) { /* ignore */ }
     }
     const where = saved && !bridge ? `%APPDATA%\\LoveIsland\\saves\\${seasonId}\\problem_report.json` : "";
-    showToast({ headline: copied ? "Problem report copied - paste it to Claude." : saved ? "Problem report saved." : "Couldn't save the report.",
+    showToast({ headline: copied ? "Problem report copied." : saved ? "Problem report saved." : "Couldn't save the report.",
       name: where });
   }
 
@@ -1008,6 +1082,7 @@
   $("btnSettings").onclick = openSettings;
   $("btnMenu").onclick = (e) => { e.stopPropagation(); show("pause"); };
   $("btnLog").onclick = (e) => { e.stopPropagation(); openLog(); };
+  $("btnSkip").onclick = (e) => { e.stopPropagation(); toggleSkip(); };
   $("btnWardrobe").onclick = (e) => { e.stopPropagation(); if (run && !anyOverlay()) openWardrobe(null); };
   $("pWardrobe").onclick = () => { hide("pause"); openWardrobe(null); };
   $("btnMute").onclick = (e) => { e.stopPropagation(); settings.muted = !settings.muted; saveSettings(); applyVolume(); };
@@ -1041,6 +1116,7 @@
     else if (e.key.toLowerCase() === "h") openLog();
     else if (e.key.toLowerCase() === "w" && run) openWardrobe(null);
     else if (e.key.toLowerCase() === "m") $("btnMute").click();
+    else if (e.key.toLowerCase() === "s") toggleSkip();
   });
   window.addEventListener("resize", () => {
     if (run && step && step.view) layoutChars(step.view, step.speaker);

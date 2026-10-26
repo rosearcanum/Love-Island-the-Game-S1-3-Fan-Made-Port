@@ -1,17 +1,14 @@
-/* Love Island PC player — window, menus, rendering, input, audio and saves. */
 (() => {
   "use strict";
   const E = window.LIEngine;
   const $ = (id) => document.getElementById(id);
   const stage = $("stage");
 
-  /* ------------------------------------------------------------ settings */
   const settings = Object.assign({ speed: 60, music: 60, sfx: 70, muted: false, season: null, fx: true },
     JSON.parse(localStorage.getItem("li-settings") || "{}"));
   const saveSettings = () => localStorage.setItem("li-settings", JSON.stringify(settings));
 
-  /* ------------------------------------------------------------ storage: PC server or Android app */
-  const bridge = window.LIBridge || null;   // present inside the Android app
+  const bridge = window.LIBridge || null;
   const api = {
     async json(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); },
     async seasons() { return bridge ? JSON.parse(bridge.seasons()) : this.json("/api/seasons"); },
@@ -27,13 +24,11 @@
     },
   };
 
-  /* ------------------------------------------------------------ state */
   let seasons = [], seasonId = null, S = null, save = null, run = null, step = null, base = "";
   let typing = null, history = [], busy = false;
-  let skipping = false, skipTimer = null;   // Skip: fast-forward through lines up to the next decision
+  let skipping = false, skipTimer = null;
 
-  /* ------------------------------------------------------------ overlays */
-  const overlays = ["title", "pause", "episodes", "rel", "settings", "logview", "ask", "confirm", "epend", "custom"];
+  const overlays = ["title", "pause", "episodes", "rel", "settings", "logview", "ask", "confirm", "epend", "custom", "dbg"];
   const show = (id) => $(id).classList.remove("hidden");
   const hide = (id) => $(id).classList.add("hidden");
   const anyOverlay = () => overlays.some((o) => !$(o).classList.contains("hidden"));
@@ -55,7 +50,6 @@
     });
   }
 
-  /* ------------------------------------------------------------ boot */
   async function boot() {
     try { seasons = await api.seasons(); }
     catch (e) { $("titleInfo").textContent = "Couldn't reach the game server. Start the game with play.py."; return; }
@@ -77,7 +71,7 @@
   }
   function disableTitle(v) { ["btnContinue", "btnNew", "btnEpisodes"].forEach((id) => ($(id).disabled = v)); }
 
-  let wantSeason = null;   // a season tapped while another one was still loading
+  let wantSeason = null;
   async function selectSeason(id) {
     if (busy) {
       wantSeason = id;
@@ -91,21 +85,18 @@
       base = `/data/${id}`;
       S = new E.Season((u) => api.json(u), base);
       await S.init();
-      // Fill-in wording for lines the season files only store as keys (Season 3's AJ dates); see fill_in_lines.json.
-      try { const f = await api.json("fill_in_lines.json"); if (f && f[id]) S.addTextKeys(f[id]); } catch (e) { /* none */ }
+      try { const f = await api.json("fill_in_lines.json"); if (f && f[id]) S.addTextKeys(f[id]); } catch (e) {  }
       save = (await api.load(id, "autosave")) || null;
-      // Later seasons sometimes check what you did in earlier ones: load those seasons' progress too.
       S.crossSaves = [];
       for (const other of seasons) {
         if (other.id === id) continue;
-        try { const sv = await api.load(other.id, "autosave"); if (sv && (sv.states || sv.deltas || sv.snapshots)) S.crossSaves.push(sv); } catch (e) { /* not played */ }
+        try { const sv = await api.load(other.id, "autosave"); if (sv && (sv.states || sv.deltas || sv.snapshots)) S.crossSaves.push(sv); } catch (e) {  }
       }
-      if (save) { E.repairLook(S, save); E.migrateSave(S, save); }   // repairs for saves from older versions
+      if (save) { E.repairLook(S, save); E.migrateSave(S, save); }
       updateTitleInfo();
     } catch (e) {
       console.error(e); $("titleInfo").textContent = "Couldn't load this season: " + e.message;
     } finally { hide("loading"); busy = false; }
-    // Tapped another season while this one loaded: switch to it now (never start the wrong season).
     if (wantSeason && wantSeason !== seasonId) { const w = wantSeason; wantSeason = null; return selectSeason(w); }
     wantSeason = null;
   }
@@ -126,10 +117,8 @@
     else $("titleInfo").textContent = `${save.playerName || "You"} · up next: ${epLabel(nx)} · ${save.completed.length}/${eps.length} done`;
   }
 
-  /* ------------------------------------------------------------ game flow */
   async function newGame() {
     if (save && !(await confirmBox("Start a new game? Your current progress in this season will be replaced."))) return;
-    // Pre-filled with the name you used in your other seasons, if any.
     const known = ((S && S.crossSaves) || []).map((sv) => sv && sv.playerName).find((n) => n && n !== "You") || "";
     const name = await askBox("What's your name?", known, 20);
     save = E.newSave(seasonId); save.playerName = name || "You"; save.seen = [];
@@ -142,14 +131,15 @@
     if (!ep) { openEpisodes(); return; }
     await startEpisode(ep, save.current && save.current.ep === ep.key ? save.current : null);
   }
-  async function startEpisode(ep, snap) {
+  async function startEpisode(ep, snap, debugJump) {
     hide("title"); hide("epend"); hide("episodes"); hide("pause");
     show("loading");
     await S.prepare(ep.controller);
     hide("loading");
-    if (!snap) {
+    if (!snap && debugJump) save.current = null;
+    else if (!snap) {
       save.current = null;
-      await api.save(seasonId, "before_" + ep.key, save);   // checkpoint for replays
+      await api.save(seasonId, "before_" + ep.key, save);
     }
     run = new E.Run(S, save, ep, snap);
     $("epbadge").textContent = epLabel(ep); show("epbadge"); show("hud");
@@ -190,7 +180,6 @@
     updateTitleInfo(); show("title");
   }
 
-  /* ------------------------------------------------------------ episodes */
   function openEpisodes() {
     const grid = $("epGrid"); grid.innerHTML = "";
     const eps = playable(), nx = nextEpisode();
@@ -219,7 +208,6 @@
     show("episodes");
   }
 
-  /* ------------------------------------------------------------ rendering */
   function render(st) {
     const v = st.view || {};
     setBg(v.bg);
@@ -263,7 +251,6 @@
   }
 
   const charEls = new Map();
-  /** Height of a standing character in this season's art (Season 1 is drawn smaller). */
   function figureUnit() {
     if (S._unit) return S._unit;
     let y0 = 1e9, y1 = -1e9;
@@ -281,15 +268,12 @@
     if (focus && !list.includes(focus)) {
       if (focus === S.playerKey) list.unshift(focus); else list.push(focus);
     }
-    // Never draw an Islander with no clothes on (e.g. Tim singing behind the shower door): they're heard, not shown.
     for (let i = list.length - 1; i >= 0; i--)
       if (list[i] !== S.playerKey && E.isUnclothed(S, save, list[i], (run && run.view.expr[list[i]]) || null)) list.splice(i, 1);
-    // You stay in your spot (bottom left) whenever you're with other Islanders, not only while you speak.
     if (settings.layout !== "side" && !list.includes(S.playerKey) && list.some((k) => k !== S.playerKey)) list.unshift(S.playerKey);
     const r = stage.getBoundingClientRect(), W = r.width, H = r.height, unit = figureUnit();
-    const place = new Map();   // key -> {x, y, scale, z}
+    const place = new Map();
     if (H > W) {
-      // Phone held upright, like the app: you up close at the bottom left, Islanders standing behind you.
       const npcs = list.filter((k) => k !== S.playerKey);
       while (npcs.length > 2) npcs.splice(npcs.findIndex((k) => k !== focus), 1);
       const xs = { 1: [0.62], 2: [0.36, 0.74] }[npcs.length] || [];
@@ -297,7 +281,6 @@
       npcs.forEach((k, i) => place.set(k, { x: xs[i] * W, y: H * 0.5, scale: sN, z: k === speaker ? 3 : 2 }));
       if (list.includes(S.playerKey)) place.set(S.playerKey, { x: W * 0.3, y: H * 0.98, scale: (H * 0.95) / unit, z: 5 });
     } else if (classic()) {
-      // Like the app: you in the bottom-left corner up close, Islanders standing further back.
       const npcs = list.filter((k) => k !== S.playerKey);
       while (npcs.length > 3) npcs.splice(npcs.findIndex((k) => k !== focus), 1);
       const xs = { 1: [0.6], 2: [0.46, 0.76], 3: [0.37, 0.6, 0.83] }[npcs.length] || [];
@@ -313,7 +296,6 @@
       list.forEach((k, i) => place.set(k, { x: xs[i] * W, y: H * 0.57, scale: (H * 1.06) / unit, z: k === speaker ? 3 : 1 }));
     }
     const box = $("chars");
-    // fade out characters that left
     for (const [k, el] of charEls) {
       if (place.has(k)) continue;
       charEls.delete(k);
@@ -334,8 +316,8 @@
       rig.style.transform = `scale(${p.scale})`;
       el.style.transform = at;
       el.dataset.x = p.x;
-      el.dataset.hy = p.y - unit * 0.42 * p.scale;          // where the face is
-      el.dataset.top = p.y - unit * 0.5 * p.scale;          // top of the head
+      el.dataset.hy = p.y - unit * 0.42 * p.scale;
+      el.dataset.top = p.y - unit * 0.5 * p.scale;
       el.dataset.player = k === S.playerKey ? "1" : "";
       const lit = speaker || (v.named ? v.focus : null);
       el.classList.toggle("dim", !!lit && k !== lit && !(classic() && k === S.playerKey));
@@ -343,7 +325,6 @@
     }
   }
   const tintCache = new Map();
-  /** A white sprite recoloured (used for Season 3 eyebrows, which the app tinted to match your hair). */
   function tinted(file, color) {
     const key = file + color;
     if (tintCache.has(key)) return tintCache.get(key);
@@ -378,15 +359,10 @@
     const token = (rig._tok = (rig._tok || 0) + 1);
     const swap = () => { if (rig._tok === token) rig.replaceChildren(...imgs); };
     const ready = Promise.all(waits).then(() => Promise.all(imgs.map((i) => i.decode().catch(() => {}))));
-    // First appearance: show the figure only once every piece has loaded (never half-drawn, e.g. without a face).
     if (!rig.firstChild) { Promise.race([ready, new Promise((r) => setTimeout(r, 1500))]).then(swap); return; }
-    // Changing expression or outfit: keep the old picture up until the new pieces are ready (no blank faces).
     Promise.race([ready, new Promise((r) => setTimeout(r, 700))]).then(swap);
   }
 
-
-
-  /* ------------------------------------------------------------ wardrobe: look and outfits, any time */
   const ICON = {
     clothes: '<svg viewBox="0 0 48 48"><path d="M18 5l2 7-6 10 4 4-6 17h24l-6-17 4-4-6-10 2-7M18 5c2 3 10 3 12 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>',
     shoes: '<svg viewBox="0 0 48 48"><path d="M6 34c8 0 14-4 20-14 2-3 5-4 7-1l4 6c1 2 4 3 6 3v6c-6 1-10 0-14-3L19 40H6z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M33 31l-1 10" stroke="currentColor" stroke-width="2.2"/></svg>',
@@ -396,7 +372,6 @@
   };
   let wd = null;
 
-  /** Draw sprite layers scaled to fit inside a box (used for item thumbnails). */
   function fitLayers(box, layers, pad) {
     box.innerHTML = "";
     if (!layers.length) return;
@@ -431,13 +406,11 @@
     return out;
   }
 
-  /** Open the wardrobe. With a story step (the game asking you to pick), it shows just that choice. */
   function openWardrobe(st) {
     if (!S || !save) return;
     let occs = E.wardrobeModel(S);
     const who = (st && st.char) || S.playerKey;
     if (st) {
-      // The story's own "choose your look" screen always shows everything (skin, eyes, hair...).
       let o = occs.find((x) => !x.only && (x.tree === st.tree || (x.trees && x.trees.includes(st.tree))));
       if (!o) {
         const t = S.get(st.tree), sk = (t && t.SkinToModify) || "Default";
@@ -478,13 +451,11 @@
     const o = wd.occs[wd.occ];
     $("wdTitle").textContent = o.label;
     $("wd").style.backgroundImage = wd.bg ? `url("${base}/backgrounds/${wd.bg}")` : "none";
-    // occasions
     const occ = $("wdOcc"); occ.innerHTML = "";
     if (wd.occs.length > 1) wd.occs.forEach((x, i) => {
       const b = document.createElement("button"); b.textContent = x.label; b.classList.toggle("on", i === wd.occ);
       b.onclick = () => { wd.occ = i; wd.cat = 0; drawWardrobe(); }; occ.appendChild(b);
     });
-    // background strip
     const bgs = $("wdBgs"); bgs.innerHTML = "";
     for (const f of wd.bgs) {
       const b = document.createElement("button"); b.style.backgroundImage = `url("${base}/backgrounds/${f}")`;
@@ -510,7 +481,6 @@
     return b;
   }
 
-  /* outfits: Clothes / Shoes / Jewellery, mix and match */
   function drawOutfit(o) {
     const key = o.label;
     let cats = wd.cache[key];
@@ -545,7 +515,6 @@
     if (o.re.test(save.skins[S.playerKey] || "")) save.skins[S.playerKey] = skin;
   }
 
-  /* look: skin, eyes, hair... with colour variants */
   function lookState(o) {
     save.custState = save.custState || {};
     const state = save.custState[o.tree] || (save.custState[o.tree] = {});
@@ -560,10 +529,9 @@
   function applyLook(o, state) {
     let model = E.customizationModel(S, save, o.tree);
     for (const name of model.groups.map((x) => x.name)) {
-      model = E.customizationModel(S, save, o.tree);          // fresh each time: nose shapes follow the skin tone just picked
+      model = E.customizationModel(S, save, o.tree);
       const g = model.groups.find((x) => x.name === name);
       const s0 = g && state[g.name]; if (!s0) continue;
-      // remember chosen colours (hair, eyes...) so anything matched to them follows along
       if (!g.auto && g.req && g.variants[s0.variant]) (save.custParams = save.custParams || {})[g.req] = g.variants[s0.variant].value;
       if (s0.item < 0 && !(g.auto && g.req)) continue;
       const v = g.variants[g.auto ? g.active : s0.variant] || g.variants[0];
@@ -632,7 +600,6 @@
     });
   }
 
-  /* ------------------------------------------------------------ emoji bursts ("explojis") */
   function playEffect(fx) {
     const box = $("fx"), r = stage.getBoundingClientRect(), H = r.height, W = r.width;
     const el = fx.char ? charEls.get(fx.char) : null;
@@ -667,7 +634,6 @@
     requestAnimationFrame(tick);
   }
 
-  /** Little round face portrait of a character. */
   function makeHead(k, into) {
     const n = run.charName(k);
     const d = document.createElement("div"); d.className = "head"; d.title = n || "";
@@ -691,13 +657,11 @@
   function renderOverflow(v) {
     const box = $("overflow"); box.innerHTML = "";
     for (const k of v.overflow || []) {
-      if (!run.charName(k) || k === v.focus || k === v.speaker) continue;   // focus/speaker are on stage right now
+      if (!run.charName(k) || k === v.focus || k === v.speaker) continue;
       makeHead(k, box);
     }
   }
 
-  /* ------------------------------------------------------------ villa map ("who do you want to talk to?") */
-  // Where each spot is on the map pictures (fraction of the picture's width and height).
   const MAP_SPOTS = [
     { re: /open_villa/i, spots: {
       "sun loungers": [0.30, 0.80], "daybeds": [0.31, 0.62], "kitchen": [0.42, 0.36], "rooftop terrace": [0.62, 0.13],
@@ -722,7 +686,6 @@
     img.innerHTML = "";
     let map = st.map;
     if (!MAP_SPOTS.some((m) => map && m.re.test(map))) {
-      // Season 1 doesn't name a map picture: use the villa overview (the night one after dark).
       const files = Object.values(S.backgrounds).map((b) => b.files && b.files[0]).filter((f) => f && /open_villa/i.test(f));
       const night = /night/i.test(st.map || "");
       map = files.find((f) => /night/i.test(f) === night) || files[0] || map;
@@ -745,7 +708,6 @@
       o.chars.slice(0, 4).forEach((k) => makeHead(k, faces));
     });
     sc.scrollLeft = (mw - W) / 2;
-    // On narrow screens the map is wider than the screen: show how many spots are off to each side.
     const edges = () => {
       const pins = [...img.querySelectorAll(".pin")].map((p) => parseFloat(p.style.left));
       const l = pins.filter((x) => x < sc.scrollLeft + W * 0.04).length, rr = pins.filter((x) => x > sc.scrollLeft + W * 0.96).length;
@@ -762,7 +724,6 @@
     hide("mapWrap");
     $("chars").style.visibility = ""; $("overflow").style.visibility = "";
   }
-  // drag the map sideways with the mouse (touch screens scroll it natively)
   (() => {
     const sc = $("mapScroll"); let down = null;
     sc.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") return; down = { x: e.clientX, left: sc.scrollLeft }; sc._dragged = false; });
@@ -775,9 +736,6 @@
     for (const k of (v.stage || []).concat(sp ? [sp] : [])) if (k && k !== S.playerKey && !save.seen.includes(k)) save.seen.push(k);
   }
   let toastTimer = null;
-  /* Introduction card: the app shows an introduced character's picture on a card (Season 1's paintings are shown this
-     way while the painter talks about them). It stays up while it's being talked about: until the next introduction,
-     a change of scene or a choice, or for 4 lines. Islanders already standing in the scene don't get a second picture. */
   let introCard = null;
   function updateIntroCard(st) {
     const v = st.view || {};
@@ -794,15 +752,13 @@
   }
 
   function showToast(t) {
-    if (!t || (!t.headline && !t.name)) return;   // nothing to say (e.g. a painting being shown)
+    if (!t || (!t.headline && !t.name)) return;
     const el = $("toast"); el.innerHTML = ""; el.append(t.headline || "");
     if (t.name) { const b = document.createElement("b"); b.textContent = t.name; el.appendChild(b); }
     show("toast"); clearTimeout(toastTimer); toastTimer = setTimeout(() => hide("toast"), 2600);
   }
 
-  /* ------------------------------------------------------------ text */
   function richTokens(text) {
-    // escape everything, then allow a small set of Unity rich-text tags
     const out = []; const re = /<(\/?)(i|b|u|color|size)(=[^>]*)?>/gi; let last = 0, m;
     while ((m = re.exec(text))) {
       if (m.index > last) out.push({ t: text.slice(last, m.index) });
@@ -834,10 +790,10 @@
     box.style.left = left + "px";
     let top = H * 0.3;
     if (el && st.speaker === S.playerKey && !st.narrator) {
-      top = Math.max(H * 0.14, Number(el.dataset.top) - h - H * 0.035);   // above your head, pointing down at you
+      top = Math.max(H * 0.14, Number(el.dataset.top) - h - H * 0.035);
       box.classList.add("tail-down");
     } else if (el && !st.narrator) {
-      top = Math.min(H * 0.42, Number(el.dataset.hy) + H * 0.1);          // under their face, pointing up
+      top = Math.min(H * 0.42, Number(el.dataset.hy) + H * 0.1);
       box.classList.add("tail");
     } else if (prompt) top = H * 0.26;
     box.style.top = top + "px";
@@ -851,13 +807,12 @@
     const el = st.speaker ? charEls.get(st.speaker) : null;
     const playerShown = charEls.has(S.playerKey);
     const w = box.offsetWidth, m = W * 0.02;
-    // In the classic layout keep the box clear of your face in the bottom-left corner.
     const minLeft = classic() && playerShown ? Math.min(W * 0.27, W - w - m) : m;
     box.classList.toggle("prompt", !!prompt);
     box.classList.remove("center", "tail", "tail-left", "tail-down");
     box.style.left = "";
     if (st.speaker && st.speaker === S.playerKey && classic() && el) {
-      box.classList.add("tail-left");                 // you're talking: pointer back to you
+      box.classList.add("tail-left");
       box.style.left = minLeft + "px";
       return;
     }
@@ -910,7 +865,6 @@
       if (o.premium) b.classList.add("premium"); if (o.exit) b.classList.add("exit");
       const k = document.createElement("span"); k.className = "key"; k.textContent = i + 1;
       if (o.outfit) {
-        // Outfit choice: show you wearing it
         b.classList.add("pic", "look"); box.classList.add("pics");
         const pv = document.createElement("div"); pv.className = "pv";
         b.append(pv, k, rich(o.label));
@@ -919,7 +873,6 @@
         b.classList.add("pic"); box.classList.add("pics");
         const im = document.createElement("img"); im.src = `${base}/sprites/${o.image.file}`; im.alt = o.label;
         b.append(im, k);
-        // Season 1 option names like "H1" or "Eth2" are internal codes, so show the picture and number only
         if (!/^[A-Za-z]{1,4}\d+$/.test(o.label)) b.append(rich(o.label));
       } else b.append(k, rich(o.label)); b.onclick = (e) => { e.stopPropagation(); hide("choices"); o.pick(); };
       box.appendChild(b);
@@ -928,15 +881,12 @@
   }
 
   function advance() {
-    if (skipping) { setSkip(false); return; }   // a tap while skipping just stops it
+    if (skipping) { setSkip(false); return; }
     if (!run || !step || anyOverlay()) return;
     if (typing) { typing.finish(); return; }
     if (step.type === "line") { run.advance(); next(); }
   }
 
-  /* ------------------------------------------------------------ skip */
-  // Fast-forwards line by line (every line still counts: choices, stats, history and saves work as normal) and stops
-  // by itself at the next decision: a choice, the villa map, a wardrobe or look screen, a name box, or the episode end.
   function setSkip(on) {
     skipping = !!on; clearTimeout(skipTimer);
     $("btnSkip").classList.toggle("on", skipping);
@@ -954,7 +904,6 @@
     else setSkip(false);
   }
 
-  /* ------------------------------------------------------------ audio */
   const m1 = $("music1"), m2 = $("music2"), sfx = $("sfx");
   let warnedAudio = false;
   for (const a of [m1, m2, sfx]) a.addEventListener("error", () => {
@@ -985,11 +934,10 @@
   }
   function applyVolume() { curEl.volume = musicVol(); $("btnMute").textContent = settings.muted ? "♪̸" : "♪"; }
 
-  /* ------------------------------------------------------------ panels */
+  const norm = (s) => String(s ?? "").trim().toLowerCase();
   function openRel() {
     const list = $("relList"); list.innerHTML = "";
     const nameOf = (k) => (run ? run.charName(k) : (S.characters[S.canon(k)] || {}).name) || "";
-    // Who fills your couple roles right now (so you can see the story remembers who you picked).
     const roles = Object.entries((save && save.refs) || {}).filter(([k, v]) => /partner|couple/i.test(k) && nameOf(v));
     for (const [k, v] of roles) {
       const label = roles.length === 1 ? "Your partner" : k.replace(/^R:/, "").replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -1002,10 +950,10 @@
     const rows = seen.map((k) => ({ k, n: nameOf(k), a: ((save.traits || {})[k] || {}).affinity }))
       .filter((r) => r.n && (typeof r.a === "number" || typeof r.a === "boolean"))
       .sort((a, b) => (typeof b.a === "number" ? b.a : b.a ? 70 : 50) - (typeof a.a === "number" ? a.a : a.a ? 70 : 50));
-    // Season 1 keeps relationships as levels in story variables ("mason_affinity": 0 dislike ... 3 love).
     const words = ["Not keen", "Neutral", "Likes you", "Loves you"];
+    const seenNames = new Set(seen.map((k) => norm(nameOf(k))));
     if (!rows.length) for (const r of E.seasonOneAffinity(S, save, run)) {
-      if (!r.role && seen.length && !seen.includes(r.k)) continue;   // roles are people you've been with in the story
+      if (!r.role && seen.length && !seenNames.has(norm(r.name))) continue;
       rows.push({ k: r.k, n: r.name, a: (r.level + 1) * 25, word: words[r.level] });
     }
     rows.sort((a, b) => (typeof b.a === "number" ? b.a : b.a ? 70 : 50) - (typeof a.a === "number" ? a.a : a.a ? 70 : 50));
@@ -1014,7 +962,6 @@
       const d = document.createElement("div"); d.className = "rel";
       const s = document.createElement("span"); s.textContent = r.n;
       if (typeof r.a === "boolean") {
-        // Season 3's own cast: a spark or not, rather than a score
         const b = document.createElement("b"); b.textContent = r.a ? "♥ Feels a spark" : "No spark yet"; b.className = r.a ? "spark" : "nospark";
         d.append(s, b); list.appendChild(d); continue;
       }
@@ -1035,7 +982,6 @@
     }
     show("logview"); list.parentElement.scrollTop = list.parentElement.scrollHeight;
   }
-  /** Problem report: where the story is, the last steps, roles, scores and notes. Saved and copied for pasting. */
   async function problemReport() {
     if (!S || !save) { showToast({ headline: "Start or continue a game first", name: "" }); return; }
     const rep = E.debugReport(S, save, run);
@@ -1044,17 +990,98 @@
     rep.recentLines = history.slice(-30);
     const json = JSON.stringify(rep, null, 1);
     let saved = false, copied = false;
-    try { await api.save(seasonId, "problem_report", rep); saved = true; } catch (e) { /* ignore */ }
+    try { await api.save(seasonId, "problem_report", rep); saved = true; } catch (e) {  }
     try { await navigator.clipboard.writeText(json); copied = true; } catch (e) {
       try {
         const ta = document.createElement("textarea"); ta.value = json; ta.style.position = "fixed"; ta.style.opacity = "0";
         document.body.appendChild(ta); ta.select(); copied = document.execCommand("copy"); ta.remove();
-      } catch (e2) { /* ignore */ }
+      } catch (e2) {  }
     }
     const where = saved && !bridge ? `%APPDATA%\\LoveIsland\\saves\\${seasonId}\\problem_report.json` : "";
     showToast({ headline: copied ? "Problem report copied." : saved ? "Problem report saved." : "Couldn't save the report.",
       name: where });
   }
+
+  const dEsc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  function dbgSection(title, rows) {
+    return `<h3>${dEsc(title)}</h3>` + (rows.length ? rows.map((r) => `<div class="dbg-row${r.warn ? " warn" : ""}">${r.warn ? "⚠ " : ""}${dEsc(r.text)}</div>`).join("") : `<div class="dbg-row muted">none</div>`);
+  }
+  function renderDebug() {
+    const n = run && S.get(run.node), out = [];
+    out.push(dbgSection("Where", [
+      { text: `Season ${seasonId} · ${run ? run.ep.key + " (" + epLabel(run.ep) + ")" : "not in an episode"} · version ${E.VERSION}` },
+      { text: n ? `Step: ${n._c} "${(n.m_Name || "").trim()}" (${run.node})` : "Step: -" },
+      { text: `Screen: ${step ? step.type : "-"}${step && step.speaker ? " · speaker " + run.charName(step.speaker) + " [" + ((S.get(step.speaker) || {}).m_Name || "") + "]" : ""}` },
+    ]));
+    const people = [];
+    if (step && step.view && run) {
+      S.artIndex();
+      const keys = [...new Set([...(step.view.stage || []), ...(step.view.focus ? [step.view.focus] : []), ...(step.speaker ? [step.speaker] : [])])];
+      for (const k of keys) {
+        const shown = run.charName(k), o = S.get(k) || {}, ak = E.avatarKeyFor(S, save, k), art = (S.get(ak) || {}).m_Name || "?";
+        const owner = k === S.playerKey ? null : S._artOwner.get(ak), role = (save.roles || {})[k];
+        const mismatch = owner && shown && owner !== shown.toLowerCase();
+        people.push({ warn: mismatch, text: `${shown} [${o.m_Name}] · art ${art}${owner ? " (" + owner + "'s)" : ""} · outfit ${save.skins[k] || "default"} · ${run.view.expr[k] || "Neutral"}${role ? " · role given to " + role.name : ""}${mismatch ? " · NAME AND ART DON'T MATCH" : ""}` });
+      }
+    }
+    out.push(dbgSection("On screen", people));
+    out.push(dbgSection("Roles and partners", [
+      ...Object.entries(save && save.roles || {}).map(([k, v]) => ({ text: `${(S.get(k) || {}).m_Name || k} → ${v.name}` })),
+      ...Object.entries(save && save.refs || {}).map(([k, v]) => ({ text: `${k.replace(/^R:/, "")} → ${run ? run.charName(v) : (S.characters[v] || {}).name || v}` })),
+    ]));
+    if (step && step.type === "choice" && n) {
+      const links = (n.transitions || []).map((t) => S.get(t)).filter(Boolean);
+      out.push(dbgSection("This choice", step.options.map((o) => {
+        const t = links.find((x) => x.fromSlot === o.slot), d = t && (S.get(t.destination) || S.get(t.destinationGraph));
+        return { text: `"${o.text.replace(/<[^>]+>/g, "")}" · option ${o.slot}${o.premium ? " · premium" : ""}${o.outfit ? " · outfit " + o.outfit : ""} → ${d ? d._c + ' "' + (d.m_Name || "").trim() + '"' : "(ends this part)"}` };
+      })));
+    }
+    out.push(dbgSection("Last steps", run ? run.trace.slice(-12).reverse().map((t) => ({ text: `${t[1]} "${(t[2] || "").trim()}"` })) : []));
+    out.push(dbgSection("Recent engine decisions", (S.notes || []).slice(-8).reverse().map((x) => ({ text: Object.entries(x).map(([a, b]) => a + ": " + b).join(" · ") }))));
+    $("dbgBody").innerHTML = out.join("");
+    const sel = $("dbgEp");
+    if (sel.dataset.season !== seasonId) {
+      sel.innerHTML = playable().map((ep) => `<option value="${dEsc(ep.key)}">${dEsc(epLabel(ep))} (${dEsc(ep.key)})</option>`).join("");
+      sel.dataset.season = seasonId;
+    }
+    if (run) sel.value = run.ep.key;
+    renderDebugVars();
+  }
+  function parseValue(v) {
+    const t = String(v).trim();
+    if (/^(true|false)$/i.test(t)) return /^true$/i.test(t);
+    if (t !== "" && !isNaN(Number(t))) return Number(t);
+    return t;
+  }
+  function renderDebugVars() {
+    const q = $("dbgFind").value.trim().toLowerCase(), box = $("dbgVars");
+    if (!q) { box.innerHTML = `<div class="dbg-row muted">Type to search. Tap a value to change it.</div>`; return; }
+    const rows = [];
+    const st = run ? run.raw : E.currentState(S, save, null);
+    for (const [k, v] of Object.entries(st)) if (k.toLowerCase().includes(q)) rows.push({ label: k, value: v, kind: "story", key: k });
+    for (const [ck, t] of Object.entries(save.traits || {})) {
+      const nm = (run ? run.charName(ck) : (S.characters[ck] || {}).name) || ck;
+      for (const [tn, v] of Object.entries(t)) { const label = nm + "." + tn; if (label.toLowerCase().includes(q)) rows.push({ label, value: v, kind: "trait", key: ck, trait: tn }); }
+    }
+    rows.sort((a, b) => a.label.localeCompare(b.label));
+    box.innerHTML = rows.slice(0, 80).map((r, i) => `<div class="dbg-var" data-i="${i}"><span>${dEsc(r.label)}</span><b>${dEsc(JSON.stringify(r.value))}</b></div>`).join("") +
+      (rows.length > 80 ? `<div class="dbg-row muted">${rows.length - 80} more - search more precisely</div>` : "") + (rows.length ? "" : `<div class="dbg-row muted">nothing matches</div>`);
+    box.querySelectorAll(".dbg-var").forEach((el) => el.addEventListener("click", async () => {
+      const r = rows[Number(el.dataset.i)];
+      if (r.kind === "story" && !run) { showToast({ headline: "Start an episode to change story values", name: "" }); return; }
+      const val = await askBox(`New value for ${r.label}`, JSON.stringify(r.value).replace(/^"|"$/g, ""), 200);
+      if (val === null || val === undefined) return;
+      const nv = parseValue(val);
+      if (r.kind === "story") run.params[r.key] = nv;
+      else (run ? run.traitsFor(r.key) : save.traits[r.key])[r.trait] = nv;
+      autosave(); renderDebug(); show("dbg");
+    }));
+  }
+  function openDebug() {
+    if (!S || !save) { showToast({ headline: "Start or continue a game first", name: "" }); return; }
+    renderDebug(); show("dbg");
+  }
+  let verTaps = 0, verTimer = null;
 
   function openSettings() {
     $("sSpeed").value = settings.speed; $("sMusic").value = settings.music; $("sSfx").value = settings.sfx;
@@ -1068,14 +1095,13 @@
   $("sFx").onchange = (e) => { settings.fx = e.target.checked; saveSettings(); };
   $("sLayout").onchange = (e) => {
     settings.layout = e.target.value; saveSettings();
-    window.dispatchEvent(new Event("resize"));   // re-place characters and the speech box
+    window.dispatchEvent(new Event("resize"));
   };
   function toggleFull(on) {
     if (on === undefined) on = !document.fullscreenElement;
     if (on) document.documentElement.requestFullscreen().catch(() => {}); else if (document.fullscreenElement) document.exitFullscreen();
   }
 
-  /* ------------------------------------------------------------ wiring */
   $("btnContinue").onclick = continueGame;
   $("btnNew").onclick = newGame;
   $("btnEpisodes").onclick = openEpisodes;
@@ -1083,6 +1109,21 @@
   $("btnMenu").onclick = (e) => { e.stopPropagation(); show("pause"); };
   $("btnLog").onclick = (e) => { e.stopPropagation(); openLog(); };
   $("btnSkip").onclick = (e) => { e.stopPropagation(); toggleSkip(); };
+  $("btnDbg").onclick = (e) => { e.stopPropagation(); openDebug(); };
+  $("btnDbg").classList.toggle("hidden", !settings.debug);
+  $("dbgFind").addEventListener("input", renderDebugVars);
+  $("dbgFind").addEventListener("keydown", (e) => e.stopPropagation());
+  $("dbgCopy").onclick = () => { hide("dbg"); problemReport(); };
+  $("dbgSkip").onclick = () => { hide("dbg"); toggleSkip(); };
+  $("dbgJump").onclick = () => { const ep = playable().find((x) => x.key === $("dbgEp").value); if (ep) { hide("dbg"); startEpisode(ep, null, true); } };
+  $("ver").addEventListener("click", () => {
+    verTaps++; clearTimeout(verTimer); verTimer = setTimeout(() => { verTaps = 0; }, 2500);
+    if (verTaps >= 5) {
+      verTaps = 0; settings.debug = !settings.debug; saveSettings();
+      $("btnDbg").classList.toggle("hidden", !settings.debug);
+      showToast({ headline: settings.debug ? "Developer mode on: Debug button added" : "Developer mode off", name: "" });
+    }
+  });
   $("btnWardrobe").onclick = (e) => { e.stopPropagation(); if (run && !anyOverlay()) openWardrobe(null); };
   $("pWardrobe").onclick = () => { hide("pause"); openWardrobe(null); };
   $("btnMute").onclick = (e) => { e.stopPropagation(); settings.muted = !settings.muted; saveSettings(); applyVolume(); };
@@ -1099,6 +1140,7 @@
   window.addEventListener("keydown", (e) => {
     if (e.key === "F11") { e.preventDefault(); toggleFull(); return; }
     if (e.key === "F9") { e.preventDefault(); problemReport(); return; }
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") { e.preventDefault(); if ($("dbg").classList.contains("hidden")) openDebug(); else hide("dbg"); return; }
     if (!$("ask").classList.contains("hidden")) return;
     if (e.key === "Escape" && wd && !wd.st) { closeWardrobe(); return; }
     if (e.key === "Escape") {
@@ -1129,12 +1171,10 @@
     save.current = run.snapshot();
     fetch(`/api/save?season=${seasonId}&name=autosave`, { method: "PUT", body: JSON.stringify(save), keepalive: true });
   });
-  // Pause music and save when the app goes to the background (phone home button, minimising).
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { if (run && !run.done) autosave(true); curEl.pause(); }
     else if (curMusic && !settings.muted) curEl.play().catch(() => {});
   });
-  // Hooks for the Android app: save now, and the phone's Back button.
   window.__liSaveNow = () => { if (run && !run.done) autosave(true); };
   window.__liBack = () => {
     if (wd && !wd.st) { closeWardrobe(); return; }
@@ -1147,5 +1187,5 @@
 
   applyVolume();
   boot();
-  window.__li = { get run() { return run; }, get save() { return save; }, get S() { return S; } };   // for debugging
+  window.__li = { get run() { return run; }, get save() { return save; }, get S() { return S; } };
 })();

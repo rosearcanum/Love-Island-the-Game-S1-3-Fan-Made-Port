@@ -34,6 +34,7 @@
 
     <div id="hud" class="hidden">
       <button id="btnWardrobe" title="Wardrobe (W)"><svg viewBox="0 0 48 32" class="ico"><path d="M24 9a4 4 0 1 1 4-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M24 9v3L4 27h40L24 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg> Wardrobe</button>
+      <button id="btnDbg" class="hidden" title="Debug (Ctrl+Shift+D)">Debug</button>
       <button id="btnSkip" title="Skip to the next choice (S)">Skip</button>
       <button id="btnLog" title="History (H)">☰ History</button>
       <button id="btnMute" title="Music on/off (M)">♪</button>
@@ -41,7 +42,6 @@
     </div>
     <div id="epbadge" class="hidden"></div>
 
-    <!-- overlays -->
     <div id="title" class="overlay">
       <div class="title-card">
         <div class="logo">Love Island<span>The Game</span></div>
@@ -107,6 +107,20 @@
       </div>
     </div>
 
+    <div id="dbg" class="overlay hidden">
+      <div class="panel wide dbg">
+        <div class="panel-head"><h2>Debug</h2><button class="close">✕</button></div>
+        <div class="dbg-tools">
+          <button id="dbgCopy">Copy report</button>
+          <button id="dbgSkip">Skip to next choice</button>
+          <select id="dbgEp"></select>
+          <button id="dbgJump">Play episode</button>
+        </div>
+        <div id="dbgBody"></div>
+        <input id="dbgFind" type="text" placeholder="Search story values or Islander values (partner, Bobby.affinity...)">
+        <div id="dbgVars"></div>
+      </div>
+    </div>
     <div id="ask" class="overlay hidden">
       <div class="panel">
         <h2 id="askTitle"></h2>

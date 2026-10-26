@@ -21,18 +21,15 @@ button { font: inherit; cursor: pointer; }
 #app { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
 #stage { position: relative; width: min(100vw, 222.2vh); height: min(100vh, 56.25vw);
   overflow: hidden; overflow: clip; background: #000; container-type: size; user-select: none;
-  --u: 1cqh; /* size unit: 1% of the screen height when sideways, about 1% of the width when upright */ }
+  --u: 1cqh;  }
 
-/* background */
 #bg, .bgl { position: absolute; inset: 0; }
 .bgl { background-size: cover; background-position: center; opacity: 0; transition: opacity .6s ease; }
 .bgl.on { opacity: 1; }
 
-/* characters */
 #chars { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 #overflow, #textbox, #choices, #hud, #epbadge, #toast { z-index: 5; }
 #fx { position: absolute; inset: 0; pointer-events: none; z-index: 6; overflow: hidden; }
-/* villa map: tap who to talk to */
 #mapWrap { position: absolute; inset: 0; z-index: 4; }
 #mapScroll { position: absolute; inset: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; cursor: grab; }
 #mapScroll::-webkit-scrollbar { display: none; }
@@ -71,7 +68,6 @@ button { font: inherit; cursor: pointer; }
 .char img { transition: filter .25s ease; }
 .char.gone { opacity: 0; }
 
-/* character bar (people present but not on stage) */
 #overflow { position: absolute; top: calc(1.6 * var(--u)); left: 1.6cqw; display: flex; gap: .8cqw; }
 .head { position: relative; width: calc(7.5 * var(--u)); height: calc(7.5 * var(--u)); border-radius: 50%; background: #ffe3ec; border: calc(.4 * var(--u)) solid #fff;
   box-shadow: 0 2px 6px rgba(0,0,0,.3); display: flex; align-items: center; justify-content: center; font-weight: 700;
@@ -79,7 +75,6 @@ button { font: inherit; cursor: pointer; }
 .head .thumb { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .head .thumb img { position: absolute; }
 
-/* text box: white speech box with a pink name tab and a pointer to the speaker */
 #textbox { position: absolute; top: calc(50 * var(--u)); left: 50%; width: min(54cqw, calc(92 * var(--u))); min-height: calc(15 * var(--u));
   background: #fff; border-radius: calc(.5 * var(--u)); box-shadow: 0 calc(.6 * var(--u)) calc(2.4 * var(--u)) rgba(0,0,0,.28);
   padding: calc(4 * var(--u)) calc(4 * var(--u)) calc(3.4 * var(--u)); font-size: max(calc(3.6 * var(--u)), 15px); line-height: 1.38; color: #3b3640; cursor: pointer;
@@ -102,7 +97,6 @@ button { font: inherit; cursor: pointer; }
 #more { position: absolute; right: calc(2 * var(--u)); bottom: calc(1.2 * var(--u)); font-size: calc(2 * var(--u)); color: #d8336f; animation: bob 1s infinite; }
 @keyframes bob { 50% { transform: translateY(calc(.5 * var(--u))); } }
 
-/* choices */
 #choices { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(4 * var(--u)); width: min(58cqw, calc(96 * var(--u)));
   display: flex; flex-direction: column; gap: calc(1.3 * var(--u)); }
 #choices.noprompt { bottom: calc(10 * var(--u)); }
@@ -115,7 +109,6 @@ button { font: inherit; cursor: pointer; }
 #choices button.premium::after { content: " 💎"; }
 #choices button.exit { border-left-color: #3b3640; color: #3b3640; font-weight: 700; }
 
-/* hud */
 #hud { position: absolute; top: calc(1.6 * var(--u)); right: 1.6cqw; display: flex; gap: .8cqw; }
 #hud button { background: rgba(255,255,255,.88); border: none; border-radius: 99px; padding: calc(.9 * var(--u)) calc(1.8 * var(--u)); font-size: max(calc(2.2 * var(--u)), 13px);
   font-family: "Josefin Sans", "Mulish", sans-serif; color: #3b3640;
@@ -129,7 +122,6 @@ button { font: inherit; cursor: pointer; }
 #toast b { margin-left: calc(.8 * var(--u)); }
 @keyframes pop { from { transform: scale(.8); opacity: 0; } }
 
-/* overlays and panels */
 .overlay { position: absolute; inset: 0; background: rgba(18, 11, 18, .55); display: flex; align-items: center;
   justify-content: center; backdrop-filter: blur(3px); }
 #title { background: radial-gradient(circle at 30% 20%, #ff9ab9, #ff4f8b 45%, #7a1f4a); }
@@ -183,7 +175,6 @@ input[type=range] { width: calc(30 * var(--u)); accent-color: var(--pink); }
 #logList .l.narr { font-style: italic; color: var(--muted); }
 #logList .l.pick { color: var(--coral); font-weight: 600; }
 
-/* picture choices (looks, colours) */
 #choices.pics { flex-direction: row; flex-wrap: wrap; justify-content: center; width: min(90cqw, calc(150 * var(--u))); }
 #choices button.pic { border-radius: calc(2 * var(--u)); padding: calc(1 * var(--u)); width: calc(17 * var(--u)); display: flex; flex-direction: column; align-items: center; gap: calc(.6 * var(--u)); font-size: calc(2.2 * var(--u)); }
 #choices button.pic > img { width: 100%; height: calc(13 * var(--u)); object-fit: contain; }
@@ -192,7 +183,6 @@ input[type=range] { width: calc(30 * var(--u)); accent-color: var(--pink); }
 #choices .pv .thumb { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 #choices .pv .thumb img { position: absolute; }
 
-/* wardrobe (style of the game's own wardrobe screen) */
 #custom { background: #1d2c3d; backdrop-filter: none; align-items: stretch; justify-content: stretch; }
 .wd { position: relative; flex: 1; display: flex; flex-direction: column; background: #8fb9de center / cover no-repeat; min-height: 0; min-width: 0; width: 100%; }
 .wd-bgs, .wd-main, .wd-preview, .wd-top { min-width: 0; }
@@ -237,13 +227,11 @@ input[type=range] { width: calc(30 * var(--u)); accent-color: var(--pink); }
   font-family: "Josefin Sans", sans-serif; font-size: max(calc(4.4 * var(--u)), 16px); letter-spacing: .1em; text-shadow: 0 calc(.2 * var(--u)) calc(.5 * var(--u)) rgba(0,0,0,.25); }
 .wd-close:hover { filter: brightness(1.06); }
 
-/* classic layout: pointer to you in the corner, choices clear of you */
 #textbox.tail-left #tail { display: block; top: calc(4.2 * var(--u)); left: calc(-2.3 * var(--u)); transform: none;
   border-top: calc(2.2 * var(--u)) solid transparent; border-bottom: calc(2.2 * var(--u)) solid transparent; border-right: calc(2.4 * var(--u)) solid #fff; border-left: 0; }
 #choices.shift { left: 61%; width: min(54cqw, calc(90 * var(--u))); }
 select { font: inherit; padding: calc(.6 * var(--u)) calc(1.2 * var(--u)); border-radius: calc(1 * var(--u)); border: calc(.3 * var(--u)) solid #e6cfd9; background: #fff; }
 
-/* ---------------- phone held upright (like the original app) ---------------- */
 @media (orientation: portrait) {
   #stage { width: 100vw; height: 100vh; height: 100dvh; max-width: none; max-height: none; --u: .95cqw; }
   #textbox { width: 88cqw; min-height: 0; padding: calc(4.6 * var(--u)) calc(4.4 * var(--u)) calc(4 * var(--u)); font-size: max(calc(4.1 * var(--u)), 15px); }
@@ -268,7 +256,6 @@ select { font: inherit; padding: calc(.6 * var(--u)) calc(1.2 * var(--u)); borde
   .logo { font-size: calc(11 * var(--u)); }
   .menu button { font-size: calc(4.2 * var(--u)); padding: calc(2.6 * var(--u)) calc(4 * var(--u)); }
   .ep-grid { grid-template-columns: repeat(2, 1fr); }
-  /* wardrobe: big picture of you on the left, categories and items down the right */
   .wd-top { flex-wrap: wrap; row-gap: calc(1.6 * var(--u)); }
   .wd-occ { order: 3; flex-basis: 100%; }
   .wd-title { font-size: calc(7 * var(--u)); }
@@ -284,7 +271,6 @@ select { font: inherit; padding: calc(.6 * var(--u)) calc(1.2 * var(--u)); borde
   input[type=range] { width: 40cqw; }
 }
 
-/* Introduction card (Season 1's paintings, and anyone introduced while not standing in the scene) */
 #introCard { position: absolute; right: 3cqw; top: calc(12 * var(--u)); z-index: 4;
   width: min(40cqh, 26cqw); aspect-ratio: 1 / 1; background: #fff; border-radius: calc(1.6 * var(--u));
   box-shadow: 0 calc(.8 * var(--u)) calc(3 * var(--u)) rgba(0,0,0,.28); padding: calc(1.2 * var(--u)); transition: opacity .25s; }
@@ -293,6 +279,16 @@ select { font: inherit; padding: calc(.6 * var(--u)) calc(1.2 * var(--u)); borde
 #introCard .thumb { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 #introCard .thumb img { position: absolute; }
 @media (orientation: portrait) {
-  /* Phone held upright: in the free space on the right, below the speech box and clear of you and the Islander's face */
   #introCard { right: 4cqw; top: 54cqh; width: 42cqw; }
 }
+
+.panel.dbg { max-height: 88%; overflow-y: auto; font-size: max(calc(1.9 * var(--u)), 12px); }
+.dbg h3 { margin: calc(1.6 * var(--u)) 0 calc(.6 * var(--u)); font-size: 1.05em; color: var(--pink); }
+.dbg-tools { display: flex; flex-wrap: wrap; gap: calc(.8 * var(--u)); margin-bottom: calc(1 * var(--u)); }
+.dbg-tools button, .dbg-tools select { font: inherit; padding: calc(.6 * var(--u)) calc(1.2 * var(--u)); border-radius: 99px; border: 1px solid #e3d6dc; background: #fff; }
+.dbg-row { padding: calc(.3 * var(--u)) 0; border-bottom: 1px dashed #efe3e8; word-break: break-word; }
+.dbg-row.warn { color: #c0265c; font-weight: 600; }
+#dbgFind { width: 100%; box-sizing: border-box; margin-top: calc(1.6 * var(--u)); padding: calc(.8 * var(--u)) calc(1.2 * var(--u)); border-radius: calc(1 * var(--u)); border: 1px solid #e3d6dc; font: inherit; }
+.dbg-var { display: flex; justify-content: space-between; gap: calc(1 * var(--u)); padding: calc(.4 * var(--u)) 0; border-bottom: 1px solid #f3eaee; cursor: pointer; }
+.dbg-var b { color: var(--pink); font-weight: 600; text-align: right; word-break: break-all; }
+#ver { cursor: default; user-select: none; }
